@@ -2,15 +2,15 @@ pipeline {
   agent any
 
   environment {
-    IO_POC_PROJECT_NAME = "IO-POC-insecure-bank"
+    IO_POC_PROJECT_NAME = "Sam-IO-POC-insecure-bank"
     IO_POC_BRANCH_NAME = "main"
     IO_POC_PROJECT_VERSION = "1.0"
-    POLARIS_ACCESS_TOKEN = credentials('polaris-token')
-    BLACKDUCK_ACCESS_TOKEN = credentials('BlackDuck-AuthToken')
-    IO_ACCESS_TOKEN = credentials('IO-AUTH-TOKEN')
-    GITHUB_USERNAME = "sigiodemo"
-    GITHUB_ACCESS_TOKEN = credentials('Github-AuthToken')
-    CODEDX_ACCESS_TOKEN = credentials('CODEDX_API_KEY')
+    POLARIS_ACCESS_TOKEN = credentials('Polaris-Token')
+    BLACKDUCK_ACCESS_TOKEN = credentials('BlackDuck-Token')
+    IO_ACCESS_TOKEN = credentials('IO-Token')
+    GITHUB_USERNAME = "sonbrothers"
+    GITHUB_ACCESS_TOKEN = credentials('Github-Secret')
+    CODEDX_ACCESS_TOKEN = credentials('	IO-CodeDX-Secret')
     CODEDX_PROJECT_ID = 2
     IS_SAST_ENABLED = "false"
     IS_SCA_ENABLED = "false"
