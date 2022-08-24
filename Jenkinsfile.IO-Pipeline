@@ -19,190 +19,272 @@ pipeline {
     IS_CODE_REVIEW_ENABLED = "false"
     IS_PEN_TESTING_ENABLED = "false"
   }
+  
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 
-  stages {
-    stage('Build') {
-      steps {
-        sh 'mvn -e clean package -DskipTests'
-      }
+// File Enviroment
+def fileProjectName = 'Sam-IO-POC-insecure-bank'
+def fileBranchName = 'master'
+
+// IO Environment
+def ioPOCId = 'IO-08-POC'
+def ioProjectName = 'Sam-IO-POC-insecure-bank'
+def ioWorkflowEngineVersion = '22022.7.0'
+def ioServerURL = "https://io08.codedx.synopsys.com"
+def ioRunAPI = "/api/ioiq/api/orchestration/runs/"
+
+// SCM - GitHub
+def gitHubPOCId = 'IO-Github-Secret'
+def gitHubOwner = 'sonbrothers'
+def scmBranch = fileBranchName
+def scmRepoName = 'IO-POC-insecure-bank'
+def scmRevisionDate = ''
+
+// AST - Polaris
+def polarisConfigName = 'Polaris-Secret'
+def polarisProjectName = fileProjectName
+def polarisBranchName = fileBranchName
+
+// AST - Black Duck
+def blackDuckPOCId = 'Blackduck-Token'
+def blackDuckProjectName = fileProjectName
+def blackDuckProjectVersion = fileBranchName
+
+// BTS Configuration
+def jiraAssignee = 'johnd'
+def jiraConfigName = 'jira-poc10'
+def jiraIssueQuery = 'resolution=Unresolved'
+def jiraProjectKey = 'IRMOB'
+def jiraProjectName = 'IRMOB'
+
+// Code Dx Configuration
+def codeDxConfigName = 'IO-CodeDX-Secret'
+def codeDxProjectId = '2'
+def codeDxInstnceURL = 'https://poc08.codedx.synopsys.com/codedx'
+def codeDxProjectAPI = '/api/projects/'
+def codeDxAnalysisEndpoint = '/analysis'
+def codeDxProjectContext = codeDxProjectId + ';branch=' + fileBranchName
+def codeDxBranchAnalysisAPI = codeDxInstnceURL + codeDxProjectAPI + codeDxProjectId + codeDxAnalysisEndpoint
+
+// Notification Configuration
+def slackConfigName = ''
+def msTeamsConfigName = ''
+
+// IO Prescription Placeholders
+def runId
+def isSASTEnabled
+def isSASTPlusMEnabled
+def isSCAEnabled
+def isDASTEnabled
+def isDASTPlusMEnabled
+def isImageScanEnabled
+def isNetworkScanEnabled
+def isCloudReviewEnabled
+def isThreatModelEnabled
+def isInfraReviewEnabled
+def breakBuild
+
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven3'
     }
-    stage('IO Prescription') {
-      steps {
-        echo "Getting IO Prescription"
-        sh '''
-          rm -fr prescription.sh
-          wget "https://raw.githubusercontent.com/synopsys-sig/io-artifacts/${WORKFLOW_CLIENT_VERSION}/prescription.sh"
-          sed -i -e 's/\r$//' prescription.sh
-          chmod a+x prescription.sh
-          ./prescription.sh \
-          --stage="IO" \
-          --persona="devsecops" \
-          --io.url="${IO_URL}" \
-          --io.token="${IO_ACCESS_TOKEN}" \
-          --manifest.type="json" \
-          --project.name="${IO_POC_PROJECT_NAME}" \
-          --workflow.url="${WORKFLOW_URL}" \
-          --workflow.version="${WORKFLOW_CLIENT_VERSION}" \
-          --scm.type="github" \
-          --scm.owner="${GITHUB_USERNAME}" \
-          --scm.repo.name="${IO_POC_PROJECT_NAME}" \
-          --scm.branch.name="main" \
-          --github.username="${GITHUB_USERNAME}" \
-          --github.token="${GITHUB_ACCESS_TOKEN}" \
-          --polaris.project.name="${IO_POC_PROJECT_NAME}" \
-          --polaris.branch.name="${IO_POC_BRANCH_NAME}" \
-          --polaris.url="${POLARIS_SERVER_URL}" \
-          --polaris.token="${POLARIS_ACCESS_TOKEN}" \
-          --blackduck.project.name="${IO_POC_PROJECT_NAME}:${IO_POC_PROJECT_VERSION}" \
-          --blackduck.url="${BLACKDUCK_URL}" \
-          --blackduck.api.token="${BLACKDUCK_ACCESS_TOKEN}" \
-          --jira.enable="false" \
-          --codedx.url="${CODEDX_SERVER_URL}" \
-          --codedx.api.key="${CODEDX_ACCESS_TOKEN}" \
-          --codedx.project.id="${CODEDX_PROJECT_ID}" \
-          --IS_SAST_ENABLED="${IS_SAST_ENABLED}" \
-          --IS_SCA_ENABLED="${IS_SCA_ENABLED}" \
-          --IS_DAST_ENABLED="${IS_DAST_ENABLED}"
-        '''
-        sh 'mv result.json io-presciption.json'
-        sh '''
-          echo "==================================== IO Risk Score =======================================" > io-risk-score.txt
-          echo "Business Criticality Score - $(jq -r '.riskScoreCard.bizCriticalityScore' io-presciption.json)" >> io-risk-score.txt
-          echo "Data Class Score - $(jq -r '.riskScoreCard.dataClassScore' io-presciption.json)" >> io-risk-score.txt
-          echo "Access Score - $(jq -r '.riskScoreCard.accessScore' io-presciption.json)" >> io-risk-score.txt
-          echo "Open Vulnerability Score - $(jq -r '.riskScoreCard.openVulnScore' io-presciption.json)" >> io-risk-score.txt
-          echo "Change Significance Score - $(jq -r '.riskScoreCard.changeSignificanceScore' io-presciption.json)" >> io-risk-score.txt
-          export bizScore=$(jq -r '.riskScoreCard.bizCriticalityScore' io-presciption.json | cut -d'/' -f2) 
-          export dataScore=$(jq -r '.riskScoreCard.dataClassScore' io-presciption.json | cut -d'/' -f2)
-          export accessScore=$(jq -r '.riskScoreCard.accessScore' io-presciption.json | cut -d'/' -f2)
-          export vulnScore=$(jq -r '.riskScoreCard.openVulnScore' io-presciption.json | cut -d'/' -f2)
-          export changeScore=$(jq -r '.riskScoreCard.changeSignificanceScore' io-presciption.json | cut -d'/' -f2)
-          echo -n "Total Score - " >> io-risk-score.txt && echo "$bizScore + $dataScore + $accessScore + $vulnScore + $changeScore" | bc >> io-risk-score.txt
-        '''
-        sh 'cat io-risk-score.txt'
-        sh '''
-          echo "IS_SAST_ENABLED = $(jq -r '.security.activities.sast.enabled' io-presciption.json)" > io-prescription.txt
-          echo "IS_SCA_ENABLED = $(jq -r '.security.activities.sca.enabled' io-presciption.json)" >> io-prescription.txt
-          echo "IS_DAST_ENABLED = $(jq -r '.security.activities.dast.enabled' io-presciption.json)" >> io-prescription.txt
-          echo "IS_IMAGE_SCAN_ENABLED = $(jq -r '.security.activities.imageScan.enabled' io-presciption.json)" >> io-prescription.txt
-          echo "IS_CODE_REVIEW_ENABLED = $(jq -r '.security.activities.sastplusm.enabled' io-presciption.json)" >> io-prescription.txt
-          echo "IS_PEN_TESTING_ENABLED = $(jq -r '.security.activities.dastplusm.enabled' io-presciption.json)" >> io-prescription.txt
-        '''
-        sh 'cat io-prescription.txt'
-      }
+
+    stages {
+        stage('Checkout') {
+            environment {
+                GITHUB_ACCESS_TOKEN = credentials("${gitHubPOCId}")
+            }
+            steps {
+                script {
+                    cleanWs()
+                    def scmURL = "https://${GITHUB_ACCESS_TOKEN}@github.com/${gitHubOwner}/${scmRepoName}"
+                    git branch: scmBranch, url: scmURL
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "mvn clean compile"
+            }
+        }
+
+        // Get prescription from IO
+        stage('Prescription') {
+            environment {
+                IO_ACCESS_TOKEN = credentials("${ioPOCId}")
+            }
+            steps {
+                synopsysIO(connectors: [
+                    io(
+                        configName: ioPOCId,
+                        projectName: ioProjectName,
+                        workflowVersion: ioWorkflowEngineVersion),
+                    github(
+                        branch: scmBranch,
+                        configName: gitHubPOCId,
+                        owner: gitHubOwner,
+                        repositoryName: scmRepoName),
+                    jira(
+                        assignee: jiraAssignee,
+                        configName: jiraConfigName,
+                        issueQuery: jiraIssueQuery,
+                        projectKey: jiraProjectKey,
+                        projectName: jiraProjectName)
+                    ]) {
+                        sh 'io --stage io'
+                    }
+
+                script {
+                    // IO-IQ will write the prescription to io_state JSON
+                    if (fileExists('io_state.json')) {
+                        def prescriptionJSON = readJSON file: 'io_state.json'
+
+                        // Pretty-print Prescription JSON
+                        // def prescriptionJSONFormat = JsonOutput.toJson(prescriptionJSON)
+                        // prettyJSON = JsonOutput.prettyPrint(prescriptionJSONFormat)
+                        // echo("${prettyJSON}")
+
+                        // Use the run Id from IO IQ to get detailed message/explanation on prescription
+                        runId = prescriptionJSON.data.io.run.id
+                        def apiURL = ioServerURL + ioRunAPI + runId
+                        def res = sh(script: "curl --location --request GET ${apiURL} --header 'Authorization: Bearer ${IO_ACCESS_TOKEN}'", returnStdout: true)
+
+                        def jsonSlurper = new JsonSlurper()
+                        def ioRunJSON = jsonSlurper.parseText(res)
+                        def ioRunJSONFormat = JsonOutput.toJson(ioRunJSON)
+                        def ioRunJSONPretty = JsonOutput.prettyPrint(ioRunJSONFormat)
+                        print("==================== IO-IQ Explanation ======================")
+                        echo("${ioRunJSONPretty}")
+                        print("==================== IO-IQ Explanation ======================")
+
+                        // Update security flags based on prescription
+                        isSASTEnabled = prescriptionJSON.data.prescription.security.activities.sast.enabled
+                        isSASTPlusMEnabled = prescriptionJSON.data.prescription.security.activities.sastPlusM.enabled
+                        isSCAEnabled = prescriptionJSON.data.prescription.security.activities.sca.enabled
+                        isDASTEnabled = prescriptionJSON.data.prescription.security.activities.dast.enabled
+                        isDASTPlusMEnabled = prescriptionJSON.data.prescription.security.activities.dastPlusM.enabled
+                        isImageScanEnabled = prescriptionJSON.data.prescription.security.activities.imageScan.enabled
+                        isNetworkScanEnabled = prescriptionJSON.data.prescription.security.activities.NETWORK.enabled
+                        isCloudReviewEnabled = prescriptionJSON.data.prescription.security.activities.CLOUD.enabled
+                        isThreatModelEnabled = prescriptionJSON.data.prescription.security.activities.THREATMODEL.enabled
+                        isInfraReviewEnabled = prescriptionJSON.data.prescription.security.activities.INFRA.enabled
+                    } else {
+                        error('IO prescription JSON not found.')
+                    }
+                }
+            }
+        }
+
+        // SAST
+        stage('SAST') {
+            when {
+                expression { isSASTEnabled }
+            }
+            steps {
+                echo 'Running SAST using Polaris'
+                synopsysIO(connectors: [
+                    polaris(
+                        configName: polarisConfigName, 
+                        projectName: polarisProjectName,
+                        branchName: polarisBranchName)]) {
+                            sh 'io --stage execution --state io_state.json'
+                }
+            }
+        }
+
+        // SCA
+        stage('SCA') {
+            when {
+                expression { isSCAEnabled }
+            }
+            steps {
+                echo 'Running SCA using Blac kDuck'
+                synopsysIO(connectors: [
+                    blackduck(
+                        configName: blackDuckPOCId,
+                        projectName: blackDuckProjectName,
+                        projectVersion: blackDuckProjectVersion)]) {
+                            sh 'io --stage execution --state io_state.json'
+                }
+            }
+        }
+
+        // Manual SAST Stage
+        stage('SAST+M') {
+            when {
+                expression { isSASTPlusMEnabled }
+            }
+            steps {
+                input message: 'High risk score or significant code-change detected. Perform manual secure code-review.'
+            }
+        }
+
+        // Run IO's Workflow Engine
+        stage('Workflow') {
+            environment {
+                CODEDX_ACCESS_TOKEN = credentials("${codeDxConfigName}")
+            }
+            steps {
+                script {
+                    print("========================== Code Dx Branch Analysis ============================")
+                    def res = sh(script: "curl --location --request POST ${codeDxBranchAnalysisAPI} --header 'Authorization: Bearer ${CODEDX_ACCESS_TOKEN}' --form 'filenames=\"\"' --form 'includeGitSource=\"\"' --form 'gitBranchName=\"\"' --form 'branchName=${fileBranchName}'", returnStdout: true)
+                    echo("${res}")
+                    print("========================== Code Dx Branch Analysis ============================")
+                }
+                synopsysIO(connectors: [
+                 /*   slack(configName: slackConfigName),
+                    msteams(configName: msTeamsConfigName)*/ ]) {
+                        sh 'io --stage workflow --state io_state.json' 
+               } 
+            }
+        } 
+
+        // Security Sign-Off Stage
+        stage('Security') {
+            steps {
+                script {
+                    if (fileExists('wf-output.json')) {
+                        def wfJSON = readJSON file: 'wf-output.json'
+
+                        // If the Workflow Output JSON has a lot of key-values; Jenkins throws a StackOverflow Exception
+                        //  when trying to pretty-print the JSON
+                        // def wfJSONFormat = JsonOutput.toJson(wfJSON)
+                        // def wfJSONPretty = JsonOutput.prettyPrint(wfJSONFormat)
+                        // print("======================== IO Workflow Engine Summary ==========================")
+                        // print(wfJSONPretty)
+                        // print("======================== IO Workflow Engine Summary ==========================")
+
+                        breakBuild = wfJSON.breaker.status
+                        print("========================== Build Breaker Status ============================")
+                        print("Breaker Status: $breakBuild")
+                        print("========================== Build Breaker Status ============================")
+
+                        if (breakBuild) {
+                            input message: 'Build-breaker criteria met.'
+                        }
+                    } else {
+                        print('No output from the Workflow Engine. No sign-off required.')
+                    }
+                }
+            }
+        }
     }
-    stage('SAST - Coverity') {
-      steps {
-        echo "Stage - Coverity on Polaris"
-        sh '''
-          IS_SAST_ENABLED=$(jq -r '.security.activities.sast.enabled' io-presciption.json)
-          echo "IS_SAST_ENABLED = ${IS_SAST_ENABLED}"
-          if [ ${IS_SAST_ENABLED} = "true" ]; then
-            echo "Running Coverity on Polaris based on IO Precription"
-            rm -fr /tmp/polaris
-            wget -q ${POLARIS_SERVER_URL}/api/tools/polaris_cli-linux64.zip
-            unzip -j polaris_cli-linux64.zip -d /tmp
-            /tmp/polaris --persist-config --co project.name="${IO_POC_PROJECT_NAME}" --co project.branch="main" --co capture.build.buildCommands="null" --co capture.build.cleanCommands="null" --co capture.fileSystem="null" --co capture.coverity.autoCapture="enable"  configure
-            /tmp/polaris analyze -w
-          else
-            echo "Skipping Coverity on Polaris based on IO Precription"
-          fi
-          '''
-      }
+
+    post {
+        always {
+            // Archive Results/Logs
+            // archiveArtifacts artifacts: '**/*-results*.json', allowEmptyArchive: 'true'
+
+            script {
+                // Remove the state json file as it has sensitive information
+                if (fileExists('io_state.json')) {
+                    sh 'rm io_state.json'
+                }
+            }
+        }
     }
-    stage('SCA - Blackduck') {
-      steps {
-        echo "Stage - Blackduck"
-        sh '''
-          IS_SCA_ENABLED=$(jq -r '.security.activities.sca.enabled' io-presciption.json)
-          echo "IS_SCA_ENABLED = ${IS_SCA_ENABLED}"
-          if [ ${IS_SCA_ENABLED} = "true" ]; then
-            echo "Running Blackduck based on IO Precription"
-            rm -fr /tmp/detect7.sh
-            curl -s -L https://detect.synopsys.com/detect7.sh > /tmp/detect7.sh
-            bash /tmp/detect7.sh --blackduck.url="${BLACKDUCK_URL}" --blackduck.api.token="${BLACKDUCK_ACCESS_TOKEN}" --detect.project.name="${IO_POC_PROJECT_NAME}" --detect.project.version.name=${IO_POC_PROJECT_VERSION} --blackduck.trust.cert=true
-          else
-            echo "Skipping Blackduck based on IO Precription"
-          fi
-          '''
-      }
-    }
-    stage('IO Workflow - CodeDx') {
-      steps {
-        echo "Preparing to run IO Workflow Engine"
-        sh '''
-          IS_SAST_ENABLED=$(jq -r '.security.activities.sast.enabled' io-presciption.json)
-          IS_SCA_ENABLED=$(jq -r '.security.activities.sca.enabled' io-presciption.json)
-          ./prescription.sh \
-          --stage="WORKFLOW" \
-          --persona="devsecops" \
-          --io.url="${IO_URL}" \
-          --io.token="${IO_ACCESS_TOKEN}" \
-          --manifest.type="json" \
-          --project.name="${IO_POC_PROJECT_NAME}" \
-          --workflow.url="${WORKFLOW_URL}" \
-          --workflow.version="${WORKFLOW_CLIENT_VERSION}" \
-          --polaris.project.name="${IO_POC_PROJECT_NAME}" \
-          --polaris.branch.name="${IO_POC_BRANCH_NAME}" \
-          --polaris.url="${POLARIS_SERVER_URL}" \
-          --polaris.token="${POLARIS_ACCESS_TOKEN}" \
-          --blackduck.project.name="${IO_POC_PROJECT_NAME}:${IO_POC_PROJECT_VERSION}" \
-          --blackduck.url="${BLACKDUCK_URL}" \
-          --blackduck.api.token="${BLACKDUCK_ACCESS_TOKEN}" \
-          --jira.enable="false" \
-          --codedx.url="${CODEDX_SERVER_URL}" \
-          --codedx.api.key="${CODEDX_ACCESS_TOKEN}" \
-          --codedx.project.id="${CODEDX_PROJECT_ID}" \
-          --IS_SAST_ENABLED="${IS_SAST_ENABLED}" \
-          --IS_SCA_ENABLED="${IS_SCA_ENABLED}" \
-          --IS_DAST_ENABLED="${IS_DAST_ENABLED}"
-        '''
-        echo "Running IO Workflow Engine with CodeDx"
-        sh '''
-          java -jar WorkflowClient.jar --workflowengine.url="${WORKFLOW_URL}" --io.manifest.path=synopsys-io.json
-        '''
-      }
-    }
-    stage('Schedule Manual Activities') {
-      steps {
-        echo "Check for Scheduling of Manual Actviities"
-        echo "Manual Code Review"
-        sh '''
-          IS_CODE_REVIEW_ENABLED=$(jq -r '.security.activities.sastplusm.enabled' io-presciption.json)
-          echo "IS_CODE_REVIEW_ENABLED = ${IS_CODE_REVIEW_ENABLED}"
-          if [ ${IS_CODE_REVIEW_ENABLED} = "true" ]; then
-            echo "Sending Notification for Manual Code Review based on IO Precription"
-            # Put code to send notification here
-          else
-            echo "Skipping Manual Code Review based on IO Precription"
-          fi
-          '''
-        echo "Manual Penetration Testing"
-        sh '''
-          IS_PEN_TESTING_ENABLED=$(jq -r '.security.activities.dastplusm.enabled' io-presciption.json)
-          echo "IS_PEN_TESTING_ENABLED = ${IS_PEN_TESTING_ENABLED}"
-          if [ ${IS_PEN_TESTING_ENABLED} = "true" ]; then
-            echo "Sending Notification for Manual Penetration Testing based on IO Precription"
-            # Put code to send notification here
-          else
-            echo "Skipping Manual Penetration Testing based on IO Precription"
-          fi
-          '''
-      }
-    }
-    stage('Break the Build') {
-      steps {
-        echo "add Build Breaker parts here"
-        sh '''
-          echo "Breaker Status - $(jq -r '.breaker.status' wf-output.json)"
-          # Put code to break the build here
-        '''
-      }
-    }
-    stage('Clean Workspace') {
-      steps {
-        cleanWs()
-      }
-    }
-  }
 }
