@@ -1,25 +1,3 @@
-pipeline {
-  agent any
-
-  environment {
-    IO_POC_PROJECT_NAME = "Sam-IO-POC-insecure-bank"
-    IO_POC_BRANCH_NAME = "main"
-    IO_POC_PROJECT_VERSION = "1.0"
-    POLARIS_ACCESS_TOKEN = credentials('Polaris-Token')
-    BLACKDUCK_ACCESS_TOKEN = credentials('BlackDuck-Token')
-    IO_ACCESS_TOKEN = credentials('IO-Token')
-    GITHUB_USERNAME = "sonbrothers"
-    GITHUB_ACCESS_TOKEN = credentials('Github-Secret')
-    CODEDX_ACCESS_TOKEN = credentials('	IO-CodeDX-Secret')
-    CODEDX_PROJECT_ID = 2
-    IS_SAST_ENABLED = "false"
-    IS_SCA_ENABLED = "false"
-    IS_DAST_ENABLED = "false"
-    IS_IMAGE_SCAN_ENABLED = "false"
-    IS_CODE_REVIEW_ENABLED = "false"
-    IS_PEN_TESTING_ENABLED = "false"
-  }
-  
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 
